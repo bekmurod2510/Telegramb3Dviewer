@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+/* MES `frontend/src/index.css` dan ko'chirilgan mavzu: `ModelViewer` va `ui/`
+   komponentlari aynan shu tokenlarni ishlatadi. Faqat light — MESdagidek. */
+
+@theme inline {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: #ffffff;
+  --surface: #f4f6f9;
+  --foreground: #1c2b42;
+  --card: #ffffff;
+  --popover: #ffffff;
+  --popover-foreground: #1c2b42;
+  --primary: #2f496e;
+  --primary-foreground: #ffffff;
+  --secondary: #edf1f7;
+  --secondary-foreground: #1c2b42;
+  --muted: #f2f5f9;
+  --muted-foreground: #5a6b82;
+  --accent: #edf2f8;
+  --accent-foreground: #1c2b42;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: #dee5ee;
+  --input: #dee5ee;
+  --ring: #f0a52f;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body {
+    height: 100%;
+    overscroll-behavior: none;
+  }
+  body {
+    @apply bg-surface text-foreground;
+  }
+  button,
+  [role="button"] {
+    cursor: pointer;
+  }
+  /* O'lcham yorliqlari ustun bo'lib tekis tursin */
+  .num {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -237,6 +237,10 @@ _NUMBER = r"(\d+(?:[.,]\d+)?)"
 _SEPARATOR = r"\s*(?:cm|см|mm|мм)?\s*[x×*хХ]\s*"
 DIMENSIONS_RE = re.compile(_NUMBER + _SEPARATOR + _NUMBER + _SEPARATOR + _NUMBER, re.IGNORECASE)
 MILLIMETERS_RE = re.compile(r"\b(?:mm|мм)\b", re.IGNORECASE)
+# Largest dimension (cm) accepted without a unit; anything bigger is read as mm.
+MAX_CM_WITHOUT_UNIT = 500
+# ...unless one value is small: "600 x 60 x 220" is a 6 m kitchen in cm, not 60 x 6 x 22.
+MIN_MM_VALUE = 100
 
 
 def parse_dimensions(text: Optional[str]) -> Optional[Dimensions]:
@@ -247,7 +251,9 @@ def parse_dimensions(text: Optional[str]) -> Optional[Dimensions]:
     if match is None:
         return None
     values = [float(raw.replace(",", ".")) for raw in match.groups()]
-    if MILLIMETERS_RE.search(text):
+    # Explicit "mm", or numbers that only make sense in millimeters: no piece of
+    # furniture is 20 m wide, so "2000 x 600 x 2200" means mm even without a unit.
+    if MILLIMETERS_RE.search(text) or (max(values) > MAX_CM_WITHOUT_UNIT and min(values) >= MIN_MM_VALUE):
         values = [value / 10 for value in values]
     if any(value <= 0 for value in values):
         return None

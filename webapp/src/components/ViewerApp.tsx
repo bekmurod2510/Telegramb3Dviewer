@@ -6,14 +6,23 @@
  * Model manbasi — havola parametri `?m=` (`lib/encode.ts`): bot uni
  * `web_app` tugmasiga yozadi, server kerak emas. Sahna telefonda ochiladi:
  * balandlik `dvh`, 3D qolgan joyni oladi (MES `routes/3d.$token.tsx` kabi).
+ *
+ * Pastda «O'zgartirish» qatori: foydalanuvchi matn yozadi («surma eshiklar»),
+ * `/api/edit` Gemini bilan `model_3d` ni yangilaydi, sahna qayta chiziladi.
+ * Faqat bot manbali modelda — MESdan kelgan `BazisModel` ni tahrirlab bo'lmaydi.
  */
 
-import { ChevronLeft, FileJson, PackageX } from "lucide-react"
+import { ChevronLeft, FileJson, PackageX, RotateCcw, Send, Wand2 } from "lucide-react"
 import dynamic from "next/dynamic"
 import { useEffect, useMemo, useState } from "react"
 import { type BazisModel, gabarit } from "@/components/Bazis/model"
 import { Button } from "@/components/ui/button"
-import { toBazisModel } from "@/lib/botModel"
+import {
+  type BotModel3D,
+  type BotResult,
+  botResultToBazis,
+  parseModelInput,
+} from "@/lib/botModel"
 import { decodeModelParam, modelParamFromLocation } from "@/lib/encode"
 
 // three.js faqat shu chunk'da va faqat brauzerda: sahna `document`/`window`
@@ -30,14 +39,25 @@ const ModelViewer = dynamic(
   },
 )
 
+type ModelHolati = {
+  model: BazisModel
+  /** Joriy bot manbasi (o'zgartirishlar shunga qo'llanadi); MES modelida `null` */
+  bot: BotResult | null
+  /** Ochilgandagi asl manba — «Asl» tugmasi shunga qaytaradi */
+  asl: BotResult | null
+  qolda: boolean
+}
+
 type Holat =
   | { tur: "yuklanmoqda" }
   | { tur: "bosh" }
   | { tur: "xato"; xabar: string }
-  | { tur: "model"; model: BazisModel; qolda: boolean }
+  | ({ tur: "model" } & ModelHolati)
 
 const xatoMatni = (e: unknown): string =>
   e instanceof Error ? e.message : "Model ochilmadi"
+
+const MAX_SOROV = 400
 
 function Markaz({ children }: { children: React.ReactNode }) {
   return (
@@ -48,19 +68,14 @@ function Markaz({ children }: { children: React.ReactNode }) {
 }
 
 /** Qo'lda yuklash: JSON matni yoki fayl (bot javobi yoki MES modeli) */
-function Yuklash({
-  onModel,
-  xato,
-}: {
-  onModel: (m: BazisModel) => void
-  xato: string | null
-}) {
+function Yuklash({ onModel }: { onModel: (m: ModelHolati) => void }) {
   const [matn, setMatn] = useState("")
-  const [xabar, setXabar] = useState<string | null>(xato)
+  const [xabar, setXabar] = useState<string | null>(null)
 
   const och = (json: string) => {
     try {
-      onModel(toBazisModel(JSON.parse(json)))
+      const { model, bot } = parseModelInput(JSON.parse(json))
+      onModel({ model, bot, asl: bot, qolda: true })
       setXabar(null)
     } catch (e) {
       setXabar(xatoMatni(e))
@@ -109,6 +124,116 @@ function Yuklash({
   )
 }
 
+/** «O'zgartirish» qatori — sahna ostida, doim ko'rinib turadi */
+function Ozgartirish({
+  bot,
+  ozgargan,
+  onNatija,
+  onAsl,
+}: {
+  bot: BotResult
+  ozgargan: boolean
+  onNatija: (model_3d: BotModel3D) => void
+  onAsl: () => void
+}) {
+  const [sorov, setSorov] = useState("")
+  const [band, setBand] = useState(false)
+  const [izoh, setIzoh] = useState<{ tur: "ok" | "xato"; matn: string } | null>(null)
+
+  const yubor = async () => {
+    const s = sorov.trim()
+    if (!s || band || !bot.model_3d) return
+    setBand(true)
+    setIzoh(null)
+    try {
+      const res = await fetch("/api/edit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model_3d: bot.model_3d,
+          instruction: s,
+          context: {
+            furniture_type: bot.furniture_type,
+            description: bot.description,
+            style: bot.style,
+          },
+        }),
+      })
+      const data = (await res.json().catch(() => ({}))) as {
+        model_3d?: BotModel3D
+        note?: string
+        error?: string
+      }
+      if (!res.ok || !data.model_3d)
+        throw new Error(data.error ?? `Server xatosi (${res.status})`)
+      onNatija(data.model_3d)
+      setSorov("")
+      setIzoh({ tur: "ok", matn: data.note || "O'zgartirildi" })
+    } catch (e) {
+      setIzoh({ tur: "xato", matn: xatoMatni(e) })
+    } finally {
+      setBand(false)
+    }
+  }
+
+  return (
+    <div className="shrink-0 border-border border-t bg-card px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+      <form
+        className="flex items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void yubor()
+        }}
+      >
+        <div className="relative min-w-0 flex-1">
+          <Wand2 className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={sorov}
+            onChange={(e) => setSorov(e.target.value.slice(0, MAX_SOROV))}
+            disabled={band}
+            enterKeyHint="send"
+            placeholder="O'zgartirish: masalan, «surma eshiklar»"
+            aria-label="Modelga o'zgartirish so'rovi"
+            className="h-10 w-full rounded-full border border-input bg-background pr-3 pl-9 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
+          />
+        </div>
+        {ozgargan && (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={() => {
+              onAsl()
+              setIzoh(null)
+            }}
+            disabled={band}
+            title="Asl holatga qaytarish"
+            aria-label="Asl holatga qaytarish"
+          >
+            <RotateCcw />
+          </Button>
+        )}
+        <Button
+          type="submit"
+          size="icon"
+          disabled={band || !sorov.trim()}
+          aria-label="Yuborish"
+        >
+          <Send />
+        </Button>
+      </form>
+      {(band || izoh) && (
+        <p
+          className={`mt-1.5 truncate text-xs ${izoh?.tur === "xato" ? "text-destructive" : "text-muted-foreground"}`}
+          role="status"
+        >
+          {band ? "Gemini o'zgartirmoqda…" : izoh?.matn}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function ViewerApp() {
   const [holat, setHolat] = useState<Holat>({ tur: "yuklanmoqda" })
 
@@ -128,8 +253,9 @@ export function ViewerApp() {
     let tirik = true
     decodeModelParam(param)
       .then((json) => {
-        if (tirik)
-          setHolat({ tur: "model", model: toBazisModel(json), qolda: false })
+        if (!tirik) return
+        const { model, bot } = parseModelInput(json)
+        setHolat({ tur: "model", model, bot, asl: bot, qolda: false })
       })
       .catch((e) => {
         if (tirik) setHolat({ tur: "xato", xabar: xatoMatni(e) })
@@ -182,18 +308,27 @@ export function ViewerApp() {
             </div>
           </div>
         </header>
-        <Yuklash
-          xato={null}
-          onModel={(m) => setHolat({ tur: "model", model: m, qolda: true })}
-        />
+        <Yuklash onModel={(m) => setHolat({ tur: "model", ...m })} />
       </div>
     )
+  }
+
+  const joriy = holat
+  /** Yangi `model_3d` — manbaga yoziladi, sahna qayta hisoblanadi */
+  const qollash = (model_3d: BotModel3D) => {
+    if (!joriy.bot) return
+    const bot: BotResult = { ...joriy.bot, model_3d }
+    setHolat({ ...joriy, bot, model: botResultToBazis(bot) })
+  }
+  const aslgaQaytar = () => {
+    if (!joriy.asl) return
+    setHolat({ ...joriy, bot: joriy.asl, model: botResultToBazis(joriy.asl) })
   }
 
   return (
     <div className="flex h-dvh flex-col bg-surface">
       <header className="flex shrink-0 items-center gap-3 border-border border-b bg-card px-3 py-2.5">
-        {holat.qolda && (
+        {joriy.qolda && (
           <Button
             variant="ghost"
             size="icon"
@@ -205,11 +340,11 @@ export function ViewerApp() {
         )}
         <div className="min-w-0 flex-1">
           <div className="truncate font-semibold leading-tight">
-            {holat.model.name || "Mebel"}
+            {joriy.model.name || "Mebel"}
           </div>
           <div className="flex min-w-0 gap-1 text-muted-foreground text-xs">
             <span className="truncate tabular-nums">
-              {holat.model.panels.length} detal
+              {joriy.model.panels.length} detal
             </span>
             {/* Umumiy o'lcham — usta birinchi so'raydigan savol "qancha joy egallaydi" */}
             {olchami && (
@@ -223,7 +358,15 @@ export function ViewerApp() {
           </div>
         </div>
       </header>
-      <ModelViewer model={holat.model} />
+      <ModelViewer model={joriy.model} />
+      {joriy.bot?.model_3d && (
+        <Ozgartirish
+          bot={joriy.bot}
+          ozgargan={joriy.bot !== joriy.asl}
+          onNatija={qollash}
+          onAsl={aslgaQaytar}
+        />
+      )}
     </div>
   )
 }

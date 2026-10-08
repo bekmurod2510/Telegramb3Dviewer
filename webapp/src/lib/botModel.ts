@@ -238,33 +238,69 @@ export function botToBazis(
 export const isBazisModel = (v: unknown): v is BazisModel =>
   isObj(v) && Array.isArray(v.panels) && Array.isArray(v.mats) && "v" in v
 
-/** Har qanday qo'llab-quvvatlanadigan JSON -> ko'ruvchi modeli:
+/** Ulushli (`units: "fraction"`) modelni sm ga o'tkazadi — o'zgartirish
+ * (`/api/edit`) va qayta chizish bir xil, sm li shaklda ishlasin. O'lcham
+ * noma'lum bo'lsa 100 sm kub olinadi (bot ham shunday "unscaled" beradi). */
+const smGa = (m: BotModel3D, dims: BotDims | null): BotModel3D => {
+  if (m.units === "cm") return m
+  const q = m.bounding_box_cm ??
+    dims ?? { width_cm: 100, depth_cm: 100, height_cm: 100 }
+  const k = (v: BotVec3): BotVec3 => ({
+    x: v.x * q.width_cm,
+    y: v.y * q.height_cm,
+    z: v.z * q.depth_cm,
+  })
+  return {
+    units: "cm",
+    bounding_box_cm: q,
+    materials: m.materials,
+    parts: m.parts.map((p) => ({ ...p, center: k(p.center), size: k(p.size) })),
+  }
+}
+
+/** Ko'ruvchi modeli + uning bot manbasi (o'zgartirish uchun). MESdan kelgan
+ * `BazisModel` da manba yo'q (`bot: null`) — uni tahrirlab bo'lmaydi. */
+export type ModelManbasi = { model: BazisModel; bot: BotResult | null }
+
+/** Bot javobidan (yoki yalang'och `model_3d` dan) ko'ruvchi modeli */
+export const botResultToBazis = (r: BotResult): BazisModel => {
+  if (!r.model_3d)
+    throw new Error(
+      r.is_furniture === false
+        ? "Rasmda mebel topilmadi — 3D model yo'q"
+        : "Javobda 3D model yo'q",
+    )
+  const tur = odamcha(r.furniture_type ?? "")
+  return botToBazis(r.model_3d, {
+    code: r.furniture_type ?? "",
+    name: [tur, r.style].filter(Boolean).join(" · ") || tur || "Mebel",
+    dims: r.dimensions_cm ?? r.estimated_dimensions_cm ?? null,
+  })
+}
+
+/** Har qanday qo'llab-quvvatlanadigan JSON -> ko'ruvchi modeli va manbasi:
  * * `BazisModel` (MES `/public/3d/.../model` javobi) — o'zgarishsiz;
  * * bot `AnalysisResult` (`model_3d` bilan);
  * * yalang'och bot `Model3D` (`parts` + `materials`). */
-export function toBazisModel(input: unknown): BazisModel {
+export function parseModelInput(input: unknown): ModelManbasi {
   if (isBazisModel(input)) {
     if (input.v !== MODEL_VERSIYA)
       throw new Error("Bu model eskirgan — uni qayta yarating")
-    return input
+    return { model: input, bot: null }
   }
   if (!isObj(input)) throw new Error("Model JSON emas")
-  if ("model_3d" in input) {
-    const r = input as BotResult
-    if (!r.model_3d)
-      throw new Error(
-        r.is_furniture === false
-          ? "Rasmda mebel topilmadi — 3D model yo'q"
-          : "Javobda 3D model yo'q",
-      )
-    const tur = odamcha(r.furniture_type ?? "")
-    return botToBazis(r.model_3d, {
-      code: r.furniture_type ?? "",
-      name: [tur, r.style].filter(Boolean).join(" · ") || tur || "Mebel",
-      dims: r.dimensions_cm ?? r.estimated_dimensions_cm ?? null,
-    })
-  }
-  if (Array.isArray(input.parts) && Array.isArray(input.materials))
-    return botToBazis(input as unknown as BotModel3D)
-  throw new Error("Model formati tanilmadi")
+  let r: BotResult
+  if ("model_3d" in input) r = { ...(input as BotResult) }
+  else if (Array.isArray(input.parts) && Array.isArray(input.materials))
+    r = { model_3d: input as unknown as BotModel3D }
+  else throw new Error("Model formati tanilmadi")
+  if (r.model_3d)
+    r.model_3d = smGa(
+      r.model_3d,
+      r.dimensions_cm ?? r.estimated_dimensions_cm ?? null,
+    )
+  return { model: botResultToBazis(r), bot: r }
 }
+
+export const toBazisModel = (input: unknown): BazisModel =>
+  parseModelInput(input).model

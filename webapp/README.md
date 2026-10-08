@@ -28,6 +28,20 @@ Supported inputs: the bot's `AnalysisResult` (with `model_3d`), a bare
 | material `name`, `color_hex`, `finish` | one string: `oak veneer #8b5a2b wood` — color and finish are read from the name |
 | bounding box | three dimension lines (`d`), toggled by the ruler button |
 
+## Change requests ("O'zgartirish" bar)
+
+The bar under the 3D scene sends `{ model_3d, instruction }` to `POST /api/edit`
+(`src/app/api/edit/route.ts`). The route asks Gemini (REST, same env names as
+the bot) for the FULL updated `model_3d` plus a one-sentence `note`, runs it
+through `src/lib/sanitize.ts` and returns it; the page rebuilds the viewer model
+and keeps the original for the reset button. Examples: "sliding doors",
+"add two more shelves", "make it 180 cm wide", "white matte doors".
+
+Needs `GEMINI_API_KEY` on the server (Vercel env var, or `.env.local` locally —
+see `.env.example`). Only models that came from the bot can be edited (a MES
+`BazisModel` has no primitive source). No auth yet: instruction ≤ 400 chars,
+≤ 80 parts.
+
 ## Commands
 
 ```bash
